@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "FUTBIN Helper v2",
+  "version": "1.0",
+  "description": "Wtyczka wspierająca handel w FIFA WebApp z analizą danych z Futbin",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "sidePanel",
+    "tabs",
+    "debugger"
+  ],
+  "host_permissions": [
+    "https://www.ea.com/*",
+    "https://www.futbin.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.ea.com/*",
+        "https://*.ea.com/*",
+        "https://ea.com/*",
+        "*://www.ea.com/*",
+        "*://*.ea.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "FUTBIN Helper v2",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

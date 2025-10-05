@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="pl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FUTBIN Helper v2</title>
+    <link rel="stylesheet" href="sidepanel.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>FUTBIN Helper v2</h1>
+            <div class="version">v1.0</div>
+        </header>
+
+        <main>
+            <section class="players-list">
+                <button id="refreshPlayersBtn" class="refresh-btn">Odśwież listę graczy</button>
+                <div id="playersList" class="players-container">
+                    <p>Kliknij "Odśwież listę graczy" aby wykryć graczy na stronie</p>
+                </div>
+            </section>
+
+            <section class="loading" id="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Pobieranie danych z Futbin...</p>
+            </section>
+
+            <section class="results" id="results" style="display: none;">
+                <h2>Wyniki analizy</h2>
+
+                <div class="sales-data">
+                    <h3>Dane sprzedaży</h3>
+
+                    <div class="sale-type">
+                        <h4>Kup teraz (Buy Now)</h4>
+                        <div class="sale-stats">
+                            <div class="stat">
+                                <span class="label">Średnia cena:</span>
+                                <span class="value" id="buyNowAverage">-</span>
+                            </div>
+                            <div class="stat">
+                                <span class="label">Liczba ofert:</span>
+                                <span class="value" id="buyNowCount">-</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="sale-type">
+                        <h4>Licytacje (Bid)</h4>
+                        <div class="sale-stats">
+                            <div class="stat">
+                                <span class="label">Średnia cena:</span>
+                                <span class="value" id="bidAverage">-</span>
+                            </div>
+                            <div class="stat">
+                                <span class="label">Liczba ofert:</span>
+                                <span class="value" id="bidCount">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="chart-container">
+                    <h3>Wykres cenowy</h3>
+                    <div id="chartSvg" class="chart-svg"></div>
+                    <div class="chart-info">
+                        <span>Średnia z wykresu: </span>
+                        <strong id="chartAverage">-</strong>
+                    </div>
+                </div>
+
+            </section>
+
+            <section class="error" id="error" style="display: none;">
+                <h2>Błąd</h2>
+                <p id="errorMessage"></p>
+                <button id="retryBtn" class="retry-btn">Spróbuj ponownie</button>
+            </section>
+        </main>
+
+        <footer>
+            <p>Przejdź na stronę FIFA WebApp i kliknij "Odśwież listę graczy"</p>
+            <button id="testFutbinBtn" class="test-futbin-btn">🧪 Test Futbin (Xabi Alonso)</button>
+        </footer>
+    </div>
+
+    <script src="sidepanel.js"></script>
+</body>
+
+</html>

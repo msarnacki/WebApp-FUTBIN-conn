@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FUTBIN Helper v2</title>
+    <style>
+        body {
+            width: 350px;
+            height: 500px;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .popup-header {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            color: white;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .popup-header h1 {
+            margin: 0;
+            font-size: 1.2em;
+        }
+        
+        .popup-content {
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .open-sidepanel-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 15px;
+        }
+        
+        .open-sidepanel-btn:hover {
+            background: linear-gradient(135deg, #2980b9, #21618c);
+        }
+        
+        .use-popup-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #27ae60, #229954);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 15px;
+        }
+        
+        .use-popup-btn:hover {
+            background: linear-gradient(135deg, #229954, #1e8449);
+        }
+        
+        .instructions {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: left;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        
+        .instructions ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .instructions li {
+            margin-bottom: 5px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="popup-header">
+        <h1>FUTBIN Helper v2</h1>
+    </div>
+    
+    <div class="popup-content">
+        <button id="openSidepanel" class="open-sidepanel-btn">
+            Otwórz Panel Boczny
+        </button>
+        
+        <button id="usePopup" class="use-popup-btn">
+            Użyj w tym oknie
+        </button>
+        
+        <div id="mainInterface" class="hidden">
+            <!-- Tutaj będzie główny interfejs -->
+            <div id="cardInfo">
+                <h3>Wykryta karta:</h3>
+                <div id="cardName">Sprawdzanie...</div>
+                <button id="analyzeBtn">Analizuj dane</button>
+            </div>
+            
+            <div id="results" class="hidden">
+                <h3>Wyniki:</h3>
+                <div id="resultsContent"></div>
+            </div>
+        </div>
+        
+        <div id="instructions" class="instructions">
+            <h3>Jak używać:</h3>
+            <ol>
+                <li>Przejdź na FIFA WebApp</li>
+                <li>Znajdź kartę "Xabi Alonso"</li>
+                <li>Kliknij jeden z przycisków powyżej</li>
+                <li>Użyj przycisku "Analizuj dane"</li>
+            </ol>
+        </div>
+    </div>
+    
+    <script>
+        let currentCardName = null;
+        
+        // Funkcja do aktualizacji interfejsu
+        function updateCardInfo(cardName) {
+            currentCardName = cardName;
+            const cardNameEl = document.getElementById('cardName');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            
+            if (cardName) {
+                cardNameEl.textContent = cardName;
+                cardNameEl.style.color = '#27ae60';
+            } else {
+                cardNameEl.textContent = 'Kliknij "Analizuj dane" aby wykryć kartę';
+                cardNameEl.style.color = '#3498db';
+            }
+            
+            // Przycisk zawsze aktywny
+            analyzeBtn.disabled = false;
+        }
+        
+        // Funkcja do pobierania nazwy karty
+        async function fetchCardName() {
+            console.log('🔍 Popup: Pobieranie nazwy karty...');
+            try {
+                const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                console.log('📋 Aktywna karta:', tab.url);
+                
+                if (!tab.url.includes('ea.com')) {
+                    console.log('❌ Nie jesteś na stronie EA');
+                    updateCardInfo(null);
+                    return;
+                }
+                
+                console.log('📤 Wysyłam wiadomość do content script...');
+                const response = await chrome.tabs.sendMessage(tab.id, { action: 'getCardName' });
+                console.log('📨 Otrzymano odpowiedź:', response);
+                updateCardInfo(response?.cardName || null);
+            } catch (error) {
+                console.error('❌ Błąd pobierania nazwy karty:', error);
+                console.log('💡 Sprawdź czy content script jest załadowany na stronie EA');
+                updateCardInfo(null);
+            }
+        }
+        
+        // Funkcja do analizy danych
+        async function analyzeData() {
+            const resultsEl = document.getElementById('results');
+            const resultsContent = document.getElementById('resultsContent');
+            
+            resultsContent.innerHTML = 'Pobieranie nazwy karty...';
+            resultsEl.classList.remove('hidden');
+            
+            try {
+                // Najpierw pobierz nazwę karty
+                console.log('🔍 Popup: Pobieranie nazwy karty...');
+                await fetchCardName();
+                
+                if (!currentCardName) {
+                    resultsContent.innerHTML = '<p style="color: #e74c3c;">Nie wykryto karty. Upewnij się, że jesteś na stronie karty w FIFA WebApp.</p>';
+                    return;
+                }
+                
+                resultsContent.innerHTML = `Analizuję kartę: ${currentCardName}...`;
+                
+                const response = await new Promise((resolve) => {
+                    chrome.runtime.sendMessage({
+                        action: 'analyzeFutbinData',
+                        cardName: currentCardName
+                    }, resolve);
+                });
+                
+                if (response.success) {
+                    let html = '<div style="text-align: left;">';
+                    html += `<h4>Karta: ${currentCardName}</h4>`;
+                    
+                    if (response.svgAnalysis) {
+                        html += `<p><strong>Średnia z wykresu:</strong> ${response.svgAnalysis.average?.toLocaleString() || 'Brak danych'} coins</p>`;
+                    }
+                    
+                    if (response.tableAnalysis) {
+                        const { bid, buyNow } = response.tableAnalysis;
+                        html += '<h4>Dane sprzedaży:</h4>';
+                        html += `<p><strong>Licytacje:</strong> ${bid.average?.toLocaleString() || 'Brak'} coins (${bid.count} ofert)</p>`;
+                        html += `<p><strong>Kup teraz:</strong> ${buyNow.average?.toLocaleString() || 'Brak'} coins (${buyNow.count} ofert)</p>`;
+                    }
+                    
+                    html += '</div>';
+                    resultsContent.innerHTML = html;
+                } else {
+                    resultsContent.innerHTML = `<p style="color: #e74c3c;">Błąd: ${response.error}</p>`;
+                }
+            } catch (error) {
+                resultsContent.innerHTML = `<p style="color: #e74c3c;">Błąd: ${error.message}</p>`;
+            }
+        }
+        
+        // Event listenery
+        document.getElementById('openSidepanel').addEventListener('click', async () => {
+            try {
+                if (chrome.sidePanel && chrome.sidePanel.open) {
+                    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+                    await chrome.sidePanel.open({ tabId: tab.id });
+                    window.close();
+                } else {
+                    chrome.windows.create({
+                        url: 'sidepanel.html',
+                        type: 'popup',
+                        width: 400,
+                        height: 600
+                    });
+                    window.close();
+                }
+            } catch (error) {
+                console.error('Błąd otwierania panelu:', error);
+                alert('Nie można otworzyć panelu bocznego. Użyj przycisku "Użyj w tym oknie".');
+            }
+        });
+        
+        document.getElementById('usePopup').addEventListener('click', () => {
+            document.getElementById('instructions').classList.add('hidden');
+            document.getElementById('openSidepanel').classList.add('hidden');
+            document.getElementById('usePopup').classList.add('hidden');
+            document.getElementById('mainInterface').classList.remove('hidden');
+            
+            // Inicjalizacja bez automatycznego sprawdzania
+            updateCardInfo(null);
+        });
+        
+        document.getElementById('analyzeBtn').addEventListener('click', analyzeData);
+    </script>
+</body>
+</html>
