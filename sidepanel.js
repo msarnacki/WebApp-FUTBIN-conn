@@ -93,13 +93,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Aktualizuj dane wykresu
         if (data.svgAnalysis) {
-            document.getElementById('chartAverage').textContent =
-                data.svgAnalysis.average ? `${data.svgAnalysis.average.toLocaleString()} coins` : 'Brak danych';
-
             // Stwórz prosty wykres SVG
             createSimpleChart(data.svgAnalysis);
-        } else {
-            document.getElementById('chartAverage').textContent = 'Brak danych';
         }
 
         // Aktualizuj dane sprzedaży
@@ -163,26 +158,27 @@ document.addEventListener('DOMContentLoaded', function () {
             const minValue = Math.min(...data);
             const maxValue = Math.max(...data);
             const range = maxValue - minValue || 1;
-            
+
             // Skaluj dane do wykresu
             const chartWidth = 360;
             const chartHeight = 80;
             const offsetX = 20;
             const offsetY = 10;
-            
+
             let pathData = '';
-            
+
             data.forEach((value, index) => {
                 const x = offsetX + (index / (data.length - 1)) * chartWidth;
-                const y = offsetY + chartHeight - ((value - minValue) / range) * chartHeight;
-                
+                // Odwrócenie wykresu - wyższe wartości na dole, niższe na górze
+                const y = offsetY + ((value - minValue) / range) * chartHeight;
+
                 if (index === 0) {
                     pathData += `M ${x} ${y}`;
                 } else {
                     pathData += ` L ${x} ${y}`;
                 }
             });
-            
+
             // Narysuj linię wykresu
             const chartLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             chartLine.setAttribute('d', pathData);
@@ -190,12 +186,13 @@ document.addEventListener('DOMContentLoaded', function () {
             chartLine.setAttribute('stroke-width', '2');
             chartLine.setAttribute('fill', 'none');
             svg.appendChild(chartLine);
-            
+
             // Dodaj punkty
             data.forEach((value, index) => {
                 const x = offsetX + (index / (data.length - 1)) * chartWidth;
-                const y = offsetY + chartHeight - ((value - minValue) / range) * chartHeight;
-                
+                // Odwrócenie wykresu - wyższe wartości na dole, niższe na górze
+                const y = offsetY + ((value - minValue) / range) * chartHeight;
+
                 const point = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                 point.setAttribute('cx', x);
                 point.setAttribute('cy', y);
@@ -203,53 +200,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 point.setAttribute('fill', '#e74c3c');
                 svg.appendChild(point);
             });
-            
-            // Etykiety min/max
-            const minText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            minText.setAttribute('x', '5');
-            minText.setAttribute('y', offsetY + chartHeight + 5);
-            minText.setAttribute('font-size', '10');
-            minText.setAttribute('fill', '#666');
-            minText.textContent = minValue.toLocaleString();
-            svg.appendChild(minText);
-            
-            const maxText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            maxText.setAttribute('x', '5');
-            maxText.setAttribute('y', offsetY + 5);
-            maxText.setAttribute('font-size', '10');
-            maxText.setAttribute('fill', '#666');
-            maxText.textContent = maxValue.toLocaleString();
-            svg.appendChild(maxText);
-            
-        } else {
-            // Fallback - prosty wykres z średnią
-            const avgLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            avgLine.setAttribute('x1', '20');
-            avgLine.setAttribute('y1', '60');
-            avgLine.setAttribute('x2', '380');
-            avgLine.setAttribute('y2', '60');
-            avgLine.setAttribute('stroke', '#3498db');
-            avgLine.setAttribute('stroke-width', '3');
-            avgLine.setAttribute('stroke-dasharray', '5,5');
-            svg.appendChild(avgLine);
+
+            // Usunięto etykiety min/max - tylko trend bez skali
+
         }
 
-        // Tekst z informacjami
-        const infoText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        infoText.setAttribute('x', '200');
-        infoText.setAttribute('y', '110');
-        infoText.setAttribute('text-anchor', 'middle');
-        infoText.setAttribute('fill', '#2c3e50');
-        infoText.setAttribute('font-size', '12');
-        infoText.setAttribute('font-weight', 'bold');
-        
-        if (svgData.average) {
-            infoText.textContent = `Średnia z wykresu: ${svgData.average.toLocaleString()} | Punkty: ${svgData.dataPoints || 0}`;
-        } else {
-            infoText.textContent = `Punkty danych: ${svgData.dataPoints || 0}`;
-        }
-        
-        svg.appendChild(infoText);
+
 
         chartContainer.innerHTML = '';
         chartContainer.appendChild(svg);

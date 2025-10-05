@@ -118,6 +118,20 @@ async function performFetch(url) {
   }
 }
 
+// Funkcja pomocnicza do bezpiecznego sprawdzania stanu debugger
+async function isDebuggerAttached(tabId) {
+  try {
+    // Sprawdź czy karta istnieje
+    await chrome.tabs.get(tabId);
+
+    // Spróbuj wysłać prosty command - jeśli debugger nie jest podłączony, rzuci błąd
+    await chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', { expression: '1' });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
 // Funkcja do pobierania przez kartę w tle (fallback)
 async function fetchViaBackgroundTab(url) {
   let tab = null;
@@ -267,6 +281,13 @@ async function fetchViaBackgroundTab(url) {
         // Spróbuj użyć debugger API do pobrania HTML
         console.log('🐛 Próbuję debugger API...');
 
+        // Sprawdź czy karta nadal istnieje przed użyciem debugger
+        try {
+          await chrome.tabs.get(tab.id);
+        } catch (tabError) {
+          throw new Error('Karta nie istnieje - nie można użyć debugger API');
+        }
+
         // Włącz debugger dla karty
         await chrome.debugger.attach({ tabId: tab.id }, '1.3');
 
@@ -298,7 +319,13 @@ async function fetchViaBackgroundTab(url) {
           // NIE wyłączaj debugger jeszcze - będziemy go potrzebować do analizy
         } else {
           // Wyłącz debugger jeśli nie udało się pobrać HTML
-          await chrome.debugger.detach({ tabId: tab.id });
+          try {
+            if (await isDebuggerAttached(tab.id)) {
+              await chrome.debugger.detach({ tabId: tab.id });
+            }
+          } catch (detachError) {
+            console.log('⚠️ Nie można odłączyć debugger:', detachError.message);
+          }
           throw new Error('Debugger API nie zwróciło HTML');
         }
 
@@ -338,13 +365,199 @@ async function fetchViaBackgroundTab(url) {
 
     let analysisResult;
     try {
-      // Użyj debugger API do analizy HTML
-      const analysisCommand = await chrome.debugger.sendCommand(
-        { tabId: tab.id },
-        'Runtime.evaluate',
-        {
-          returnByValue: true,
-          expression: `
+      // Sprawdź czy karta i debugger nadal działają
+      const debuggerStillAttached = await isDebuggerAttached(tab.id);
+
+      if (!debuggerStillAttached) {
+        console.log('⚠️ Debugger już nie jest podłączony, używam executeScript do analizy HTML');
+        // Fallback - użyj executeScript do analizy HTML w kontekście karty
+        try {
+          const scriptResults = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: () => {
+              // Ta funkcja zostanie wykonana w kontekście karty gdzie DOM jest dostępny
+              try {
+                console.log('🔍 Analizuję dane sprzedaży w kontekście karty...');
+
+                // Pobierz dane sprzedaży z tabeli - sprawdź różne selektory
+                const allTables = document.querySelectorAll('table');
+                const allTbodies = document.querySelectorAll('tbody');
+                const allTrs = document.querySelectorAll('tr');
+
+                console.log('📊 Wszystkich tabel:', allTables.length);
+                console.log('📊 Wszystkich tbody:', allTbodies.length);
+                console.log('📊 Wszystkich tr:', allTrs.length);
+
+                // Spróbuj konkretnego CSS selektora z Futbin
+                const cssSelector = 'body > div.widthControl.mainPagePadding > div.playersalesoverviewpage.medium-column > div.grid-auto-300 > div.sales-main-content.full-width > div.auctions-table-box.medium-column.text-nowrap.full-width-mobile-box > div.auctions-table-wrapper.custom-scrollbar > table > tbody';
+                let targetTbody = document.querySelector(cssSelector);
+
+                let rows = [];
+                if (targetTbody) {
+                  rows = targetTbody.querySelectorAll('tr');
+                  console.log('🎯 CSS tbody tr:', rows.length);
+                }
+
+                // Fallback - spróbuj różnych selektorów CSS
+                if (rows.length === 0) {
+                  rows = document.querySelectorAll('table tbody tr');
+                  console.log('📊 table tbody tr:', rows.length);
+                }
+
+                if (rows.length === 0) {
+                  rows = document.querySelectorAll('tbody tr');
+                  console.log('📊 tbody tr:', rows.length);
+                }
+
+                const sales = [];
+                const bidSales = [];
+                const buyNowSales = [];
+                let processedRows = 0;
+
+                rows.forEach((row, index) => {
+                  if (row.cells.length >= 6) {
+                    processedRows++;
+
+                    const timeText = row.cells[0]?.textContent?.trim();
+                    const priceText = row.cells[1]?.textContent?.trim();
+                    const typeText = row.cells[5]?.textContent?.trim();
+
+                    if (priceText && /[0-9]/.test(priceText)) {
+                      const cleanPrice = priceText.replace(/[^0-9,]/g, '').replace(/,/g, '');
+                      const price = parseInt(cleanPrice, 10);
+
+                      if (!isNaN(price) && price > 0) {
+                        const saleData = {
+                          price: price,
+                          timeText: timeText,
+                          type: typeText
+                        };
+
+                        if (typeText === 'Bid') {
+                          bidSales.push(saleData);
+                        } else if (typeText === 'Buy Now') {
+                          buyNowSales.push(saleData);
+                        }
+
+                        if (typeText === 'Bid' || typeText === 'Buy Now') {
+                          sales.push({
+                            soldFor: price,
+                            timeText: timeText,
+                            type: typeText
+                          });
+                        }
+                      }
+                    }
+                  }
+                });
+
+                // Oblicz średnią dla każdej kategorii
+                function calculateAverage(data) {
+                  const prices = data.map(item => item.price);
+                  const count = prices.length;
+                  const sum = prices.reduce((acc, val) => acc + val, 0);
+                  const average = count > 0 ? Math.round(sum / count) : null;
+                  return { average, count };
+                }
+
+                const bidResult = calculateAverage(bidSales);
+                const buyNowResult = calculateAverage(buyNowSales);
+                const overallResult = calculateAverage(sales.map(s => ({ price: s.soldFor })));
+
+                // Sprawdź SVG wykres
+                let chartPath = document.querySelector('path.highcharts-graph');
+                if (!chartPath) {
+                  chartPath = document.querySelector('g.highcharts-series path.highcharts-graph');
+                }
+                if (!chartPath) {
+                  chartPath = document.querySelector('svg path[d*="M"]');
+                }
+
+                let svgAnalysis = null;
+                if (chartPath) {
+                  const pathData = chartPath.getAttribute('d');
+                  if (pathData) {
+                    const numbers = pathData.match(/[0-9.]+/g);
+                    if (numbers && numbers.length > 4) {
+                      const yCoords = [];
+                      for (let i = 1; i < numbers.length; i += 2) {
+                        const y = parseFloat(numbers[i]);
+                        if (!isNaN(y)) yCoords.push(y);
+                      }
+
+                      if (yCoords.length > 0) {
+                        const average = yCoords.reduce((a, b) => a + b, 0) / yCoords.length;
+                        svgAnalysis = {
+                          average: Math.round(average),
+                          dataPoints: yCoords.length,
+                          rawData: yCoords
+                        };
+                      }
+                    }
+                  }
+                }
+
+                return {
+                  success: true,
+                  tableAnalysis: {
+                    bid: {
+                      average: bidResult.average,
+                      count: bidResult.count
+                    },
+                    buyNow: {
+                      average: buyNowResult.average,
+                      count: buyNowResult.count
+                    },
+                    overall: {
+                      average: overallResult.average,
+                      count: overallResult.count
+                    }
+                  },
+                  svgAnalysis: svgAnalysis,
+                  debug: {
+                    totalRows: rows.length,
+                    processedRows: processedRows,
+                    bidSales: bidSales.length,
+                    buyNowSales: buyNowSales.length,
+                    foundChartPath: !!chartPath
+                  }
+                };
+
+              } catch (error) {
+                return {
+                  success: false,
+                  error: error.message,
+                  stack: error.stack
+                };
+              }
+            }
+          });
+
+          if (scriptResults && scriptResults[0] && scriptResults[0].result) {
+            analysisResult = scriptResults[0].result;
+            console.log('📊 Wynik analizy przez executeScript:', analysisResult);
+          } else {
+            throw new Error('executeScript nie zwrócił wyników');
+          }
+
+        } catch (executeError) {
+          console.error('❌ Błąd executeScript:', executeError);
+          analysisResult = {
+            success: false,
+            error: executeError.message,
+            tableAnalysis: null,
+            svgAnalysis: null
+          };
+        }
+      } else {
+        console.log('✅ Debugger nadal podłączony, używam Runtime.evaluate');
+        // Użyj debugger API do analizy HTML
+        const analysisCommand = await chrome.debugger.sendCommand(
+          { tabId: tab.id },
+          'Runtime.evaluate',
+          {
+            returnByValue: true,
+            expression: `
             (function() {
               try {
                 console.log('🔍 Analizuję dane sprzedaży jak w working example...');
@@ -636,26 +849,27 @@ async function fetchViaBackgroundTab(url) {
               }
             })()
           `
-        }
-      );
+          }
+        );
 
-      console.log('📊 Raw analysisCommand:', analysisCommand);
+        console.log('📊 Raw analysisCommand:', analysisCommand);
 
-      if (analysisCommand.result) {
-        if (analysisCommand.result.value) {
-          analysisResult = analysisCommand.result.value;
-          console.log('📊 Wynik analizy HTML:', analysisResult);
-        } else if (analysisCommand.result.exceptionDetails) {
-          console.error('❌ Błąd w JavaScript analizy:', analysisCommand.result.exceptionDetails);
-          throw new Error(`JavaScript error: ${analysisCommand.result.exceptionDetails.text}`);
+        if (analysisCommand.result) {
+          if (analysisCommand.result.value) {
+            analysisResult = analysisCommand.result.value;
+            console.log('📊 Wynik analizy HTML:', analysisResult);
+          } else if (analysisCommand.result.exceptionDetails) {
+            console.error('❌ Błąd w JavaScript analizy:', analysisCommand.result.exceptionDetails);
+            throw new Error(`JavaScript error: ${analysisCommand.result.exceptionDetails.text}`);
+          } else {
+            console.error('❌ Brak value w result:', analysisCommand.result);
+            throw new Error('Analiza HTML nie zwróciła value');
+          }
         } else {
-          console.error('❌ Brak value w result:', analysisCommand.result);
-          throw new Error('Analiza HTML nie zwróciła value');
+          console.error('❌ Brak result w analysisCommand:', analysisCommand);
+          throw new Error('Analiza HTML nie zwróciła result');
         }
-      } else {
-        console.error('❌ Brak result w analysisCommand:', analysisCommand);
-        throw new Error('Analiza HTML nie zwróciła result');
-      }
+      } // Koniec bloku debugger API
 
     } catch (analysisError) {
       console.error('❌ Błąd analizy HTML:', analysisError);
@@ -669,13 +883,23 @@ async function fetchViaBackgroundTab(url) {
     // Wyłącz debugger i zamknij kartę po analizie
     if (tab?.id) {
       try {
-        // Wyłącz debugger
-        await chrome.debugger.detach({ tabId: tab.id });
-        console.log('✅ Debugger odłączony');
+        // Sprawdź czy karta nadal istnieje przed odłączeniem debugger
+        try {
+          await chrome.tabs.get(tab.id);
+          // Wyłącz debugger tylko jeśli karta istnieje
+          await chrome.debugger.detach({ tabId: tab.id });
+          console.log('✅ Debugger odłączony');
+        } catch (tabError) {
+          console.log('⚠️ Karta już nie istnieje, debugger prawdopodobnie już odłączony');
+        }
 
-        // Zamknij kartę
-        await chrome.tabs.remove(tab.id);
-        console.log('✅ Karta zamknięta po analizie');
+        // Spróbuj zamknąć kartę (może już być zamknięta)
+        try {
+          await chrome.tabs.remove(tab.id);
+          console.log('✅ Karta zamknięta po analizie');
+        } catch (removeError) {
+          console.log('⚠️ Karta już zamknięta lub nie można jej zamknąć');
+        }
       } catch (e) {
         console.error('Błąd zamykania karty/debugger:', e);
       }
@@ -690,12 +914,20 @@ async function fetchViaBackgroundTab(url) {
       try {
         // Wyłącz debugger jeśli był włączony
         try {
+          // Sprawdź czy karta istnieje przed odłączeniem debugger
+          await chrome.tabs.get(tab.id);
           await chrome.debugger.detach({ tabId: tab.id });
         } catch (debuggerError) {
-          // Debugger może już być wyłączony
+          // Debugger może już być wyłączony lub karta nie istnieje
+          console.log('⚠️ Nie można odłączyć debugger:', debuggerError.message);
         }
 
-        await chrome.tabs.remove(tab.id);
+        // Spróbuj zamknąć kartę
+        try {
+          await chrome.tabs.remove(tab.id);
+        } catch (removeError) {
+          console.log('⚠️ Nie można zamknąć karty:', removeError.message);
+        }
       } catch (e) {
         console.error('Błąd zamykania karty:', e);
       }
@@ -705,159 +937,7 @@ async function fetchViaBackgroundTab(url) {
   }
 }
 
-// Funkcja do analizy HTML content
-function analyzeHtmlContent(doc) {
-  console.log('🔍 Analizuję HTML content...');
 
-  // Sprawdź podstawowe informacje o dokumencie
-  const allTables = doc.querySelectorAll('table');
-  const allSvgs = doc.querySelectorAll('svg');
-  const allPaths = doc.querySelectorAll('path');
-
-  console.log('📊 Elementy w dokumencie:');
-  console.log('  - Tabele:', allTables.length);
-  console.log('  - SVG:', allSvgs.length);
-  console.log('  - Paths:', allPaths.length);
-
-  // Wypisz pierwsze kilka tabel i SVG dla debugowania
-  allTables.forEach((table, i) => {
-    if (i < 3) {
-      console.log(`  - Tabela ${i}:`, table.className, 'wierszy:', table.rows?.length || 0);
-    }
-  });
-
-  allSvgs.forEach((svg, i) => {
-    if (i < 3) {
-      console.log(`  - SVG ${i}:`, svg.className, 'paths:', svg.querySelectorAll('path').length);
-    }
-  });
-
-  // Szukaj różnych selektorów SVG
-  const svgSelectors = [
-    'path.highcharts-graph',
-    '.highcharts-graph',
-    'path[class*="highcharts"]',
-    'svg path[d*="M"]',
-    'svg path' // Bardziej ogólny selektor
-  ];
-
-  let svgPath = null;
-  for (const selector of svgSelectors) {
-    const elements = doc.querySelectorAll(selector);
-    console.log(`🔍 Selektor "${selector}" znalazł ${elements.length} elementów`);
-
-    if (elements.length > 0) {
-      svgPath = elements[0]; // Weź pierwszy
-      console.log('✅ Znaleziono SVG przez:', selector);
-      console.log('📐 Path data:', svgPath.getAttribute('d')?.substring(0, 100) + '...');
-      break;
-    }
-  }
-
-  // Szukaj tabeli
-  const tableSelectors = [
-    'table tbody',
-    '.auctions-table-wrapper tbody',
-    '.sales-main-content tbody',
-    'tbody' // Bardziej ogólny selektor
-  ];
-
-  let tableBody = null;
-  for (const selector of tableSelectors) {
-    const elements = doc.querySelectorAll(selector);
-    console.log(`🔍 Selektor "${selector}" znalazł ${elements.length} elementów`);
-
-    for (const element of elements) {
-      if (element.children.length > 0) {
-        tableBody = element;
-        console.log('✅ Znaleziono tabelę przez:', selector, 'wierszy:', tableBody.children.length);
-        break;
-      }
-    }
-    if (tableBody) break;
-  }
-
-  // Analiza SVG
-  let svgAnalysis = null;
-  if (svgPath) {
-    const pathData = svgPath.getAttribute('d');
-    if (pathData) {
-      console.log('📐 Analizuję path data...');
-      const yCoords = [];
-      const matches = pathData.match(/[\d.]+/g);
-
-      if (matches) {
-        for (let i = 1; i < matches.length; i += 2) {
-          const y = parseFloat(matches[i]);
-          if (!isNaN(y)) yCoords.push(y);
-        }
-      }
-
-      if (yCoords.length > 0) {
-        const average = yCoords.reduce((a, b) => a + b, 0) / yCoords.length;
-        svgAnalysis = {
-          average: Math.round(average),
-          dataPoints: yCoords.length
-        };
-        console.log('📊 SVG analiza:', svgAnalysis);
-      }
-    }
-  }
-
-  // Analiza tabeli
-  let tableAnalysis = null;
-  if (tableBody) {
-    console.log('📋 Analizuję tabelę...');
-    const rows = tableBody.querySelectorAll('tr');
-    const bidSales = [];
-    const buyNowSales = [];
-
-    rows.forEach(row => {
-      const cells = row.querySelectorAll('td');
-      if (cells.length >= 6) {
-        const priceText = cells[1].textContent.trim().replace(/,/g, '');
-        const price = parseInt(priceText);
-        const typeCell = cells[5].textContent.trim();
-
-        if (!isNaN(price) && price > 0) {
-          if (typeCell === 'Bid') {
-            bidSales.push(price);
-          } else if (typeCell === 'Buy Now') {
-            buyNowSales.push(price);
-          }
-        }
-      }
-    });
-
-    const calculateAverage = (prices) => {
-      if (prices.length === 0) return null;
-      return Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
-    };
-
-    tableAnalysis = {
-      bid: {
-        average: calculateAverage(bidSales),
-        count: bidSales.length
-      },
-      buyNow: {
-        average: calculateAverage(buyNowSales),
-        count: buyNowSales.length
-      }
-    };
-
-    console.log('📊 Tabela analiza:', tableAnalysis);
-  }
-
-  return {
-    svgAnalysis,
-    tableAnalysis,
-    debug: {
-      foundSvg: !!svgPath,
-      foundTable: !!tableBody,
-      tableRows: tableBody ? tableBody.children.length : 0
-    }
-  };
-}
 
 
 
