@@ -48,5 +48,11 @@
   },
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["players.csv"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

@@ -33,12 +33,81 @@ chrome.runtime.onInstalled.addListener(() => {
   }
 });
 
-// Słownik kart - nazwa karty -> część URL
-const cardDictionary = {
-  "Xabi Alonso": "18792/xabi-alonso",
-  // Dodaj więcej graczy tutaj w formacie:
-  // "Nazwa Gracza": "id/nazwa-url"
-};
+// Słownik kart - będzie załadowany z pliku CSV
+let cardDictionary = {};
+
+// Funkcja do ładowania słownika z pliku CSV
+async function loadCardDictionary() {
+  try {
+    console.log('📚 Ładowanie słownika graczy z players.csv...');
+
+    // Pobierz plik CSV z rozszerzenia
+    const response = await fetch(chrome.runtime.getURL('players.csv'));
+    const csvText = await response.text();
+
+    // Parsuj CSV
+    const lines = csvText.trim().split('\n');
+    const newDictionary = {};
+
+    for (const line of lines) {
+      if (line.trim()) {
+        const [name, url] = line.split(',');
+        if (name && url) {
+          // Dodaj zarówno oryginalną nazwę jak i znormalizowaną
+          const cleanName = name.trim();
+          const cleanUrl = url.trim();
+
+          newDictionary[cleanName] = cleanUrl;
+
+          // Dodaj mapowania dla popularnych nazw
+          const nameMapping = {
+            "Alonso Olano": ["Xabi Alonso", "Alonso"],
+            "Arantes Nascimento": ["Pelé", "Pele"],
+            "Nazário de Lima": ["Ronaldo", "R9"],
+            "de Assis Moreira": ["Ronaldinho"],
+            "Franz Beckenbauer": ["Beckenbauer"],
+            "Hernández Creus": ["Xavi"],
+            "da Silva Ferreira": ["Ronaldinho"],
+            "González Blanco": ["Raúl", "Raul"],
+            "Casillas Fernández": ["Casillas"],
+            "Madeira Caeiro Figo": ["Figo"],
+            "Butragueño Santos": ["Butragueño", "Butragueno"],
+            "Puyol Saforcada": ["Puyol"],
+            "dos Santos Leite": ["Rivaldo"],
+            "Hierro Ruiz": ["Hierro"],
+            "Torres Sanz": ["Torres"],
+            "Lima do Amor": ["Cafú", "Cafu"]
+          };
+
+          if (nameMapping[cleanName]) {
+            for (const alias of nameMapping[cleanName]) {
+              newDictionary[alias] = cleanUrl;
+            }
+          }
+        }
+      }
+    }
+
+    cardDictionary = newDictionary;
+    console.log(`✅ Załadowano ${Object.keys(cardDictionary).length} graczy z CSV`);
+    console.log('📋 Przykładowi gracze:', Object.keys(cardDictionary).slice(0, 5));
+
+    return true;
+  } catch (error) {
+    console.error('❌ Błąd ładowania słownika z CSV:', error);
+
+    // Fallback - użyj podstawowego słownika
+    cardDictionary = {
+      "Xabi Alonso": "18792/alonso-olano",
+      "Alonso Olano": "18792/alonso-olano"
+    };
+    console.log('⚠️ Używam podstawowego słownika jako fallback');
+    return false;
+  }
+}
+
+// Załaduj słownik przy starcie
+loadCardDictionary();
 
 // Funkcja do wyszukiwania gracza w słowniku (case-insensitive)
 function findPlayerInDictionary(playerName) {
@@ -1001,36 +1070,59 @@ async function fetchViaBackgroundTab(url) {
 // Nasłuchiwanie wiadomości z content script i sidepanel
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getCardDictionary') {
-    sendResponse({ dictionary: cardDictionary });
+    // Upewnij się że słownik jest załadowany
+    if (Object.keys(cardDictionary).length === 0) {
+      loadCardDictionary().then(() => {
+        sendResponse({ dictionary: cardDictionary });
+      });
+      return true; // Asynchroniczna odpowiedź
+    } else {
+      sendResponse({ dictionary: cardDictionary });
+    }
   } else if (request.action === 'analyzeFutbinData') {
     const { cardName } = request;
-    const cardUrlPart = findPlayerInDictionary(cardName);
 
-    if (!cardUrlPart) {
-      sendResponse({
-        success: false,
-        error: `Gracz "${cardName}" nie został znaleziony w słowniku. Dostępni gracze: ${Object.keys(cardDictionary).join(', ')}`
-      });
-      return;
-    }
+    // Funkcja do analizy po załadowaniu słownika
+    const analyzeWithDictionary = () => {
+      const cardUrlPart = findPlayerInDictionary(cardName);
 
-    console.log(`🎯 Znaleziono gracza "${cardName}" w słowniku: ${cardUrlPart}`);
-
-    fetchFutbinData(cardUrlPart).then(result => {
-      if (!result.success) {
-        sendResponse(result);
+      if (!cardUrlPart) {
+        const availablePlayers = Object.keys(cardDictionary).slice(0, 10).join(', ');
+        sendResponse({
+          success: false,
+          error: `Gracz "${cardName}" nie został znaleziony w słowniku. Przykładowi gracze: ${availablePlayers}...`
+        });
         return;
       }
 
-      sendResponse({
-        success: true,
-        cardName: cardName,
-        svgAnalysis: result.svgAnalysis,
-        tableAnalysis: result.tableAnalysis
+      console.log(`🎯 Znaleziono gracza "${cardName}" w słowniku: ${cardUrlPart}`);
+
+      fetchFutbinData(cardUrlPart).then(result => {
+        if (!result.success) {
+          sendResponse(result);
+          return;
+        }
+
+        sendResponse({
+          success: true,
+          cardName: cardName,
+          svgAnalysis: result.svgAnalysis,
+          tableAnalysis: result.tableAnalysis
+        });
+      }).catch(error => {
+        sendResponse({ success: false, error: error.message });
       });
-    }).catch(error => {
-      sendResponse({ success: false, error: error.message });
-    });
+    };
+
+    // Upewnij się że słownik jest załadowany
+    if (Object.keys(cardDictionary).length === 0) {
+      console.log('📚 Słownik nie załadowany, ładuję...');
+      loadCardDictionary().then(() => {
+        analyzeWithDictionary();
+      });
+    } else {
+      analyzeWithDictionary();
+    }
 
     return true; // Asynchroniczna odpowiedź
   }
