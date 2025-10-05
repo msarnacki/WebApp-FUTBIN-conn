@@ -163,7 +163,7 @@ h4 {
 }
 
 .players-container {
-    max-height: 400px;
+    max-height: 200px;
     overflow-y: auto;
     border: 1px solid #dee2e6;
     border-radius: 8px;

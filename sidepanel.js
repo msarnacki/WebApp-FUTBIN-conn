@@ -93,8 +93,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Aktualizuj dane wykresu
         if (data.svgAnalysis) {
+            // Ustaw tytuł z średnią ceną
+            const chartTitle = document.getElementById('chartTitle');
+            if (data.svgAnalysis.average) {
+                chartTitle.textContent = `Średnia: ${data.svgAnalysis.average.toLocaleString()} coins`;
+            } else {
+                chartTitle.textContent = 'Brak danych średniej';
+            }
+
             // Stwórz prosty wykres SVG
             createSimpleChart(data.svgAnalysis);
+        } else {
+            // Brak danych wykresu
+            const chartTitle = document.getElementById('chartTitle');
+            chartTitle.textContent = 'Brak danych wykresu';
         }
 
         // Aktualizuj dane sprzedaży

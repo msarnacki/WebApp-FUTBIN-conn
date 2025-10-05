@@ -464,6 +464,22 @@ async function fetchViaBackgroundTab(url) {
                 const buyNowResult = calculateAverage(buyNowSales);
                 const overallResult = calculateAverage(sales.map(s => ({ price: s.soldFor })));
 
+                // Pobierz średnią z elementu AVG
+                let avgFromLabel = null;
+                const avgElement = document.querySelector('text.highcharts-plot-line-label');
+                if (avgElement && avgElement.textContent.includes('AVG:')) {
+                  const avgText = avgElement.textContent;
+                  const avgMatch = avgText.match(/AVG:\s*([\d,]+)/);
+                  if (avgMatch) {
+                    // Usuń przecinki (separatory tysięczne) i konwertuj na liczbę
+                    const avgValue = parseInt(avgMatch[1].replace(/,/g, ''), 10);
+                    if (!isNaN(avgValue)) {
+                      avgFromLabel = avgValue;
+                      console.log('📊 Znaleziono AVG z etykiety:', avgValue);
+                    }
+                  }
+                }
+
                 // Sprawdź SVG wykres
                 let chartPath = document.querySelector('path.highcharts-graph');
                 if (!chartPath) {
@@ -488,13 +504,24 @@ async function fetchViaBackgroundTab(url) {
                       if (yCoords.length > 0) {
                         const average = yCoords.reduce((a, b) => a + b, 0) / yCoords.length;
                         svgAnalysis = {
-                          average: Math.round(average),
+                          average: avgFromLabel || Math.round(average), // Użyj AVG z etykiety jeśli dostępne
                           dataPoints: yCoords.length,
-                          rawData: yCoords
+                          rawData: yCoords,
+                          avgFromLabel: avgFromLabel // Dodaj informację o źródle średniej
                         };
                       }
                     }
                   }
+                }
+
+                // Jeśli nie ma wykresu ale jest AVG, stwórz podstawową analizę
+                if (!svgAnalysis && avgFromLabel) {
+                  svgAnalysis = {
+                    average: avgFromLabel,
+                    dataPoints: 0,
+                    rawData: [],
+                    avgFromLabel: avgFromLabel
+                  };
                 }
 
                 return {
@@ -745,6 +772,22 @@ async function fetchViaBackgroundTab(url) {
                 console.log('📊 Buy Now - Średnia:', buyNowResult.average, 'Liczba:', buyNowResult.count);
                 console.log('📊 Ogółem - Średnia:', overallResult.average, 'Liczba:', overallResult.count);
                 
+                // Pobierz średnią z elementu AVG
+                let avgFromLabel = null;
+                const avgElement = document.querySelector('text.highcharts-plot-line-label');
+                if (avgElement && avgElement.textContent.includes('AVG:')) {
+                  const avgText = avgElement.textContent;
+                  const avgMatch = avgText.match(/AVG:\s*([\d,]+)/);
+                  if (avgMatch) {
+                    // Usuń przecinki (separatory tysięczne) i konwertuj na liczbę
+                    const avgValue = parseInt(avgMatch[1].replace(/,/g, ''), 10);
+                    if (!isNaN(avgValue)) {
+                      avgFromLabel = avgValue;
+                      console.log('📊 Znaleziono AVG z etykiety:', avgValue);
+                    }
+                  }
+                }
+
                 // Sprawdź SVG wykres - użyj selektora z README
                 console.log('📊 Szukam SVG wykresu...');
                 
@@ -795,10 +838,11 @@ async function fetchViaBackgroundTab(url) {
                       if (yCoords.length > 0) {
                         const average = yCoords.reduce((a, b) => a + b, 0) / yCoords.length;
                         svgAnalysis = {
-                          average: Math.round(average),
+                          average: avgFromLabel || Math.round(average), // Użyj AVG z etykiety jeśli dostępne
                           dataPoints: yCoords.length,
                           pathClass: chartPath.className.baseVal || chartPath.className,
-                          rawData: yCoords // Dodaj surowe dane do rysowania wykresu
+                          rawData: yCoords, // Dodaj surowe dane do rysowania wykresu
+                          avgFromLabel: avgFromLabel // Dodaj informację o źródle średniej
                         };
                         console.log('📊 SVG analiza:', svgAnalysis);
                         console.log('📊 Surowe dane Y (pierwsze 10):', yCoords.slice(0, 10));
@@ -807,6 +851,17 @@ async function fetchViaBackgroundTab(url) {
                   }
                 } else {
                   console.log('❌ Nie znaleziono żadnego path wykresu');
+                }
+
+                // Jeśli nie ma wykresu ale jest AVG, stwórz podstawową analizę
+                if (!svgAnalysis && avgFromLabel) {
+                  svgAnalysis = {
+                    average: avgFromLabel,
+                    dataPoints: 0,
+                    rawData: [],
+                    avgFromLabel: avgFromLabel
+                  };
+                  console.log('📊 Utworzono SVG analizę z AVG etykiety:', svgAnalysis);
                 }
                 
                 return {
